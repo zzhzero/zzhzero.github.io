@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8"/>
+    <title>H5-tank-zzh</title>
+</head>
+
+<body>
+<div style="text-align: center">
+    <canvas id="main"></canvas>
+</div>
+<audio id="start"></audio>
+<audio id="endie"></audio>
+<audio id="attack"></audio>
+<audio id="medie"></audio>
+<audio id="prop"></audio>
+<audio id="bullet"></audio>
+</body>
+<script type="text/javascript">
+    var start = document.getElementById("start");
+    var endie = document.getElementById("endie");
+    var attack = document.getElementById("attack");
+    var medie = document.getElementById("medie");
+    var prop = document.getElementById("prop");
+    var bullet = document.getElementById("bullet");
+
+    var WALLSIZE = 30;
+    var WALLLIFE = 100;
+    var TANKSIZE = 40;
+    var TANKLIFE = 100;
+    var MISSLESIZE = 10;
+    var CMDSIZE = WALLSIZE * 2;
+    var CMDLIFE = 100;
+    var PROPSIZE = 25;
+    var WALLTYPE = "Q";
+    var UNITTANKME = "W";
+    var UNITANKENEMY = "D";
+    var UNITCMD = "C";
+    var UNITMISSYTPE = "M";
+    var UNITPROP = "P";
+    var unitindex = 0;
+    var stage;
+    var wallCount = 20;
+    var tankenemyCount = 10;
+    var relifeConut = 5;
+    var boomCount = 5;
+    var gamestate = 0;
+    var tempState;
+    var icetime;
+    var gs = ["准备战斗", "激战中", "暂停", "胜利", "一败涂地", "被冰冻", "冰冻敌军", "等待复活", "等死"];
+    var allunit = [];
+    var kills = [15, 17, 20, 23, 26, 36];
+    var defense = [0, 2, 5, 7, 10, 14];
+
+    var tankme = new Tankme(200, 200);
+    var canvas = document.getElementById("main");
+    canvas.width = screen.width * 0.9;
+    canvas.height = screen.height * 0.79;
+    var bus = canvas.getContext("2d");
+    bus.fillStyle = "#22";
+    bus.fillRect(0, 0, canvas.width, canvas.height);
+
+    Array.prototype.remove = function (obj) {
+        var index = this.indexOf(obj);
+        if (index > -1) {
+            this.splice(index, 1);
+        }
+    }
+
+    function Stage() {
+        this.data = new Array();
+    }
+
+    Stage.prototype.add = function (obj) {
+        this.data.push(obj);
+    }
+    Stage.prototype.remove = function (obj) {
+        this.data.remove(obj);
+    }
+    Stage.prototype.draw = function (g) {
+        var list = this.data;
+
+        function loop() {
+            bus.clearRect(0, 0, canvas.width, canvas.height);
+            bus.fillStyle = "#222";
+            bus.fillRect(0, 0, canvas.width, canvas.height);
+            painInfo(g);
+            list.forEach(function (o) {
+                o.pain(g);
+            })
+            requestAnimationFrame(loop);
+        }
+
+        loop();
+    }
+
+    function painInfo(g) {
+        g.beginPath();
+        g.font = "14px Consolas";
+        g.fillStyle = "#fff";
+        var tx = 20;
+        var ty = 20;
+        var tt = 160;
+        g.fillText("enemy num:" + tankenemyCount, tx, ty);
+        g.fillText("your life:" + tankme.life, tx, ty += 16);
+        g.fillText("your relife:" + relifeConut, tx, ty += 16);
+        g.fillText("your speed:" + tankme.speed, tx, ty += 16);
+        g.fillText("火力级别: " + tankme.level, tx, ty += 16);
+        g.fillText("防御级别: " + tankme.protoct, tx, ty += 16);
+        g.fillText("可用地雷: " + boomCount, tx, ty += 16);
+        g.fillText("your state:" + gs[gamestate], tx, ty += 16);
+        g.stroke();
+        if (gamestate == 2) {
+            g.font = "24px Consolas";
+            g.fillStyle = "yellow";
+            g.fillText("press enter", (canvas.width - 200) / 2, canvas.height / 2);
+        }
+        if (gamestate == 3) {
+            g.font = "24px Consolas";
+            g.fillStyle = "yellow";
+            g.fillText("you win", (canvas.width - 200) / 2, canvas.height / 2);
+        }
+        if (gamestate == 4) {
+            g.font = "24px Consolas";
+            g.fillStyle = "yellow";
+            g.fillText("you boom", (canvas.width - 200) / 2, canvas.height / 2);
+        }
+        if (gamestate == 5 || gamestate == 6) {
+            g.fillText("ice time:" + icetime, tx, ty += 16);
+        }
+        if (gamestate == 7) {
+            g.font = "24px Consolas";
+            g.fillStyle = "yellow";
+            g.fillText("Please R", (canvas.width - 200) / 2, canvas.height / 2);
+        }
+    }
+
+    function playstartaudio() {
+        start.src = "audio/start.mp3";
+        start.play();
+    }
+
+    function playboomtaudio() {
+        endie.src = "audio/tankCrack.mp3";
+        endie.play();
+    }
+
+    function playbiubiubiutaudio() {
+        attack.src = "audio/attack.mp3";
+        attack.play();
+    }
+
+    function playmedieaudio() {
+        medie.src = "audio/playerCrack.mp3";
+        medie.play();
+    }
+
+    function playpropaudio() {
+        prop.src = "audio/prop.mp3";
+        prop.play();
+    }
+
+    function playbulletaudio() {
+        bullet.src = "audio/bulletCrack.mp3";
+        bullet.play();
+    }
+
+    function painBlood(g, o, h) {
+        g.beginPath();
+        if (o.type == "B" || o.type == "P") return;
+        if (o.type == UNITMISSYTPE + UNITTANKME || o.type == UNITMISSYTPE + UNITANKENEMY) return;
+        var color = "lime";
+        if (o.life < 30) {
+            color = "red";
+        } else if (o.life < 50) {
+            color = "#F28";
+        } else if (o.life < 70) {
+            color = "#F40";
+        } else if (o.life < 85) {
+            color = "orange";
+        } else if (o.life < 95) {
+            color = "cyan";
+        }
+        var b = (o.life / 100) * o.w;
+        g.fillStyle = color;
+        g.fillRect(o.x, o.y - h - 1, b, h);
+        g.strokeStyle = color;
+        g.strokeRect(o.x, o.y - h - 1, o.w, h);
+        g.stroke();
+
+    }
+
+    function Unit(x, y, w, h, life, type, index, src) {
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
+        this.life = life;
+        this.type = type;
+        this.index = index;
+        this.src = src;
+        this.boom = function () {
+            var boom = new Boom(this.x, this.y);
+            stage.add(boom);
+        }
+        return this;
+    }
+
+    Unit.prototype.pain = function (g) {
+        var img = new Image();
+        img.src = "img/" + this.src;
+        painBlood(g, this, 5);
+        g.drawImage(img, this.x, this.y, this.w, this.h);
+    }
+
+    function Wall(x, y) {
+        var wa = new Unit(x, y, WALLSIZE, WALLSIZE, WALLLIFE, WALLTYPE, unitindex++, "qiang.gif");
+        wa.protoct = 0;
+        return wa;
+    }
+
+    function Missile(tank) {
+        var mx = tank.x;
+        var my = tank.y;
+        var dir = tank.dir;
+        if (dir == 0) {
+            my += 15;
+        } else if (dir == 1) {
+            mx += 15;
+        } else if (dir == 2) {
+            my += 15;
+            mx += 40;
+        } else if (dir == 3) {
+            mx += 15;
+            my += 40;
+        }
+        var src = "m" + tank.level + ".gif";
+        var o = new Unit(mx, my, MISSLESIZE, MISSLESIZE, 1, UNITMISSYTPE + tank.type, tank.index, src);
+        o.speed = 10;
+        o.kill = kills[tank.level];
+        o.timer = null;
+        o.move = function () {
+            if (dir == 0) {
+                this.x -= this.speed;
+            } else if (dir == 1) {
+                this.y -= this.speed;
+            } else if (dir == 2) {
+                this.x += this.speed;
+            } else if (dir == 3) {
+                this.y += this.speed;
+            }
+            if (hitForRectangle(this)) {
+                clearInterval(this.timer);
+                stage.remove(this);
+            }
+        }
+        return o;
+    }
+
+    function Cmd(x, y) {
+        var wa = new Unit(x, y, CMDSIZE, CMDSIZE, CMDLIFE, UNITCMD, unitindex++, "hero.gif");
+        wa.protoct = 0;
+        return wa;
+    }
+
+    function initWall() {
+        var wx = (canvas.width - WALLSIZE * wallCount) / 2;
+        var wy = 100;
+        for (var i = 0; i < wallCount; i++) {
+            var wall = new Wall(wx, wy);
+            stage.add(wall);
+            allunit.push(wall);
+            wx += WALLSIZE;
+        }
+        wx = (canvas.width - WALLSIZE * wallCount) / 2 - 100;
+        wy = 200;
+        for (var i = 0; i < wallCount / 2; i++) {
+            var wall = new Wall(wx, wy);
+            stage.add(wall);
+            allunit.push(wall);
+            wy += WALLSIZE;
+        }
+        wx = (canvas.width + WALLSIZE * wallCount) / 2 + 100;
+        wy = 200;
+        for (var i = 0; i < wallCount / 2; i++) {
+            var wall = new Wall(wx, wy);
+            stage.add(wall);
+            allunit.push(wall);
+            wy += WALLSIZE;
+        }
+    }
+
+    function initCmd() {
+        var wx = (canvas.width - CMDSIZE) / 2;
+        var wy = canvas.height - CMDSIZE;
+        var cmd = new Cmd(wx, wy);
+        var twx = wx;
+        var twy = wy;
+
+        for (var i = 0; i < 3; i++) {
+            var wall = new Wall(twx - WALLSIZE, twy - WALLSIZE);
+            stage.add(wall);
+            allunit.push(wall);
+            twx += WALLSIZE;
+        }
+        for (var i = 0; i < 3; i++) {
+            var wall = new Wall(twx - WALLSIZE, twy - WALLSIZE);
+            stage.add(wall);
+            allunit.push(wall);
+            twy += WALLSIZE;
+        }
+        for (var i = 0; i < 2; i++) {
+            var wall = new Wall(wx - WALLSIZE, wy);
+            stage.add(wall);
+            allunit.push(wall);
+            wy += WALLSIZE;
+        }
+        stage.add(cmd);
+        allunit.push(cmd);
+    }
+
+    function Boom(x, y) {
+        var o = new Unit(x, y, 5, 5, 1, "B", unitindex++, "6.gif");
+        o.timer = null;
+        var me = o;
+        o.begin = function () {
+            me.timer = setInterval(function () {
+                me.w += 5;
+                me.h += 5;
+                if (me.w >= 50) {
+                    clearInterval(me.timer);
+                    stage.remove(me);
+                }
+            }, 50);
+        }
+        playboomtaudio();
+        o.begin();
+        return o;
+    }
+
+    function property() {
+        var x = Math.random() * canvas.width;
+        var y = Math.random() * canvas.height;
+        var count = parseInt(Math.random() * 11);
+        var src = "x" + count + ".gif";
+        var o = new Unit(x, y, PROPSIZE, PROPSIZE, 1, UNITPROP, unitindex++, src);
+        o.imgindex = count;
+        return o;
+    }
+
+    function hitForRectangle(o) {
+        var flag = false;
+        if (o.x < 0 || o.y < 0 || o.x > canvas.width - o.w || o.y > canvas.height - o.h) {
+            return true;
+        }
+
+        for (var i = 0; i < allunit.length; i++) {
+            var o2 = allunit[i];
+            if (o.index == o2.index) {
+                continue;
+            }
+            if (o.x > o2.x && o.x - o2.x <= o2.w || o2.x > o.x && o2.x - o.x <= o.w || o.x == o2.x) {
+                flag = hitTest(o, o2);
+            }
+            if (flag) {
+                if ((o.type == "D" || o.type == "W") && o2.type == "P") {
+                    stage.remove(o2);
+                    allunit.remove(o2);
+                    console.log(o2.imgindex);
+                    playpropaudio();
+                    switch (o2.imgindex) {
+                        case 0:
+                            o.life = o.life + 20;
+                            if (o.life > 100) o.life = 100;
+                            break;
+                        case 1:
+                            o.speed += o.speed > 12 ? 0 : 1;
+                            break;
+                        case 2:
+                            o.ice(o.type);
+                            break;
+                        case 3:
+                            o.level += o.level > 4 ? 0 : 1;
+                            break;
+                        case 4:
+                            o.protoct += o.protoct > 4 ? 0 : 1;
+                            break;
+                        case 5:
+                            for (var i = 0; i < allunitength; i++) {
+                                if (allunit[i].type == "Q") {
+                                    if (o.type == "W") {
+                                        allunit[i].life += allunit[i].life > 100 ? 0 : 10;
+                                    }
+                                }
+                            }
+                            break;
+                        case 6:
+                            o.level -= o.level <= 0 ? 0 : 1;
+                            break;
+                        case 7:
+                            o.life -= (parseInt(Math.random() * 20));
+                            if (o.life <= 0) {
+                                o.life = 0;
+                                stage.remove(o);
+                                allunit.remove(o);
+                                o.boom();
+                                gamestate = 7;
+                            }
+                            break;
+                        case 8:
+                            if (o.type == "W") {
+                                relifeConut++;
+                            } else {
+                                buildEnemy(3);
+                            }
+                            break;
+                        case 9:
+                            break;
+                        case 10:
+                            if (o.type == "D") {
+                                o.life -= (parseInt(Math.random() * 60) + 50);
+                                if (o.life <= 0) {
+                                    o.life = 0;
+                                    o.boom();
+                                    if (tankenemyCount <= 0) gamestate = 3;
+                                    stage.remove(o);
+                                    allunit.reduce(o);
+                                }
+                            } else {
+                                continue;
+                            }
+                            break;
+
+                    }
+                }
+                if (o.type == "MD" || o.type == "MW") {
+                    if ((o.type == "MD" && o2.type == "D") || o2.type == "P") {
+                        return false;
+                    } else {
+                        o2.life = o2.life - o.kill + defense[o2.protoct];
+                        playbulletaudio();
+                        if (o2.life <= 0) {
+                            stage.remove(o2);
+                            allunit.remove(o2);
+                            if (o2.type != "Q")
+                                o2.boom();
+                            if (o2.type == "D") {
+                                tankenemyCount--;
+                                var pp = new property();
+                                stage.add(pp);
+                                allunit.push(pp);
+                                if (tankenemyCount == 0) gamestate = 3;
+                            } else if (o2.type == "W") {
+                                gamestate = relifeConut > 0 ? 7 : 8;
+                            } else if (o2.type == "C") {
+                                gamestate = 4;
+                            }
+
+                        }
+                    }
+
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function buildEnemy(count) {
+        if (tankenemyCount >= 10) {
+            return;
+        } else {
+            for (var i = 0; i < count; i++) {
+                var x = parseInt(Math.random() * (canvas.width - 200)) + 50;
+                var y = parseInt(Math.random() * (canvas.width - 150)) + 50;
+                var tank = new TankEnemy(x, y);
+                stage.add(tank);
+                allunit.push(tank);
+            }
+        }
+    }
+
+    function hitTest(o1, o2) {
+        if (o1.y > o2.y && o1.y - o2.y <= o2.h) {
+            return true;
+        } else if (o2.y > o1.y && o2.y - o1.y <= o1.h) {
+            return true;
+        } else if (o1.y == o2.y) {
+            return true;
+        }
+    }
+
+    function Tank(x, y, type, src, speed, dir) {
+        var o = new Unit(x, y, TANKSIZE, TANKSIZE, TANKLIFE, type, unitindex++, src);
+        o.speed = speed;
+        o.dir = dir;
+        o.type = type;
+        o.level = 0;
+        o.protoct = 0;
+        o.left = false;
+        o.right = false;
+        o.up = false;
+        o.down = false;
+
+        o.move = function () {
+            var ox = this.x;
+            var oy = this.y;
+            if (this.left) {
+                this.x -= this.speed;
+                this.src = (o.type == UNITTANKME ? "tL.gif" : "dL.gif");
+                this.dir = 0;
+            } else if (this.up) {
+                this.y -= this.speed;
+                this.src = (o.type == UNITTANKME ? "tU.gif" : "dU.gif");
+                this.dir = 1;
+
+            } else if (this.right) {
+                this.x += this.speed;
+                this.src = (o.type == UNITTANKME ? "tR.gif" : "dR.gif");
+                this.dir = 2;
+
+            } else if (this.down) {
+                this.y += this.speed;
+                this.src = (o.type == UNITTANKME ? "tD.gif" : "dD.gif");
+                this.dir = 3;
+
+            }
+            if (hitForRectangle(this)) {
+                this.x = ox;
+                this.y = oy;
+            }
+        }
+        o.fire = function () {
+            var miss = new Missile(this);
+            stage.add(miss);
+            playbiubiubiutaudio();
+            miss.timer = setInterval(function () {
+                if (gamestate != 2) {
+                    if (this.type == "D") {
+                        if (gamestate != 6) miss.move();
+                    } else {
+                        if (gamestate == 1 || gamestate == 6) miss.move();
+                    }
+                }
+
+            }, 30);
+        }
+        o.ice = function (type) {
+            if (gamestate == 1) {
+                if (type == "W") {
+                    tempState = gamestate;
+                    thawTimer();
+                    gamestate = 6;
+                } else {
+                    tempState = gamestate;
+                    thawTimer();
+                    gamestate = 5;
+                }
+            }
+        }
+        o.level = 0;
+        o.protoct = 0;
+        return o;
+    }
+
+    function thawTimer() {
+        icetime = 4;
+        iceTimer = setInterval(function () {
+            icetime--;
+            if (icetime == 0) {
+                icetime = 4;
+                if (gamestate == 5 || gamestate == 6) {
+                    gamestate = tempState;
+                }
+                clearInterval(iceTimer);
+            }
+        }, 1000);
+    }
+
+    function TankEnemy(x, y) {
+        var o = new Tank(x, y, UNITANKENEMY, "dD.gif", 4, 3);
+        o.begin = function () {
+            var n = parseInt(Math.random() * 100);
+            if (n % 50 == 0) {
+                n = parseInt(Math.random() * 4);
+                this.dir = n;
+                this.fire();
+            }
+            this.left = this.dir == 0;
+            this.up = this.dir == 1;
+            this.right = this.dir == 2;
+            this.down = this.dir == 3;
+            if (gamestate != 6)
+                this.move();
+        }
+        return o;
+    }
+
+    function Tankme(x, y) {
+        var o = new Tank(x, y, UNITTANKME, "tU.gif", 8, 1);
+        allunit.push(o);
+        return o;
+    }
+
+    function initTankEnemy() {
+        var wx = (canvas.width - (TANKSIZE + 10) * tankenemyCount) / 2;
+        var wy = 10;
+        for (var i = 0; i < tankenemyCount; i++) {
+            var tankEnemy = new TankEnemy(wx, wy);
+            stage.add(tankEnemy);
+            allunit.push(tankEnemy);
+            wx += TANKSIZE + 10;
+        }
+    }
+
+    window.addEventListener("keydown", function (e) {
+        if (e.keyCode == 37) {
+            tankme.left = true;
+            tankme.up = false;
+            tankme.right = false;
+            tankme.down = false;
+        } else if (e.keyCode == 38) {
+            tankme.left = false;
+            tankme.up = true;
+            tankme.right = false;
+            tankme.down = false;
+        } else if (e.keyCode == 39) {
+            tankme.left = false;
+            tankme.up = false;
+            tankme.right = true;
+            tankme.down = false;
+        } else if (e.keyCode == 40) {
+            tankme.left = false;
+            tankme.up = false;
+            tankme.right = false;
+            tankme.down = true;
+        }
+    })
+    window.addEventListener("keyup", function (e) {
+        console.log(e.keyCode);
+        if (e.keyCode == 37) {
+            tankme.left = false;
+
+        } else if (e.keyCode == 38) {
+
+            tankme.up = false;
+
+        } else if (e.keyCode == 39) {
+
+            tankme.right = false;
+
+        } else if (e.keyCode == 40) {
+
+            tankme.down = false;
+        } else if (e.keyCode == 13) {
+            if (gamestate == 0 || gamestate == 2) {
+                if (gamestate == 0) playstartaudio();
+
+                gamestate = 1;
+                setInterval(function () {
+                    for (var i = 0; i < allunit.length; i++) {
+                        if (allunit[i].type == "D") {
+                            if (gamestate == 1 || gamestate == 6)
+                                allunit[i].begin();
+                        }
+                    }
+                }, 30);
+            } else if (gamestate == 1)
+                gamestate = 2;
+        } else if (e.keyCode == 32) {
+            if (gamestate == 1 || gamestate == 6)
+                tankme.fire();
+        } else if (e.keyCode == 82) {
+            if (gamestate == 7) {
+                if (relifeConut > 0) {
+                    relifeConut--;
+                    tankme = new Tankme(200, 200);
+                    stage.add(tankme);
+                    allunit.push(tankme);
+                    gamestate = 1;
+                }
+            }
+        }
+    })
+    window.onload = function () {
+        stage = new Stage();
+
+        stage.add(tankme);
+
+
+        initWall();
+        initTankEnemy();
+        initCmd();
+
+        setInterval(function () {
+            if (gamestate == 1 || gamestate == 6)
+                tankme.move();
+        }, 40);
+        stage.draw(bus);
+
+    }
+</script>
+
+</html>
